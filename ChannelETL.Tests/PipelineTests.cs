@@ -1,6 +1,4 @@
 using ChannelETL.Pipeline;
-using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 
 namespace ChannelETL.Tests
 {
@@ -9,9 +7,9 @@ namespace ChannelETL.Tests
         [Fact]
         public async Task CompletesAndPreservesOrder()
         {
-            var source = new TestSource<int>(Enumerable.Range(1, 5));
-            var transform = new TestTransform<int, string>(async (i, ct) => i.ToString());
-            var destination = new TestDestination<string>();
+            var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
+            var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) => i.ToString());
+            var destination = TestComponents.CreateTestDestination<string>();
 
             var pipeline = new Pipeline<int, string>
             {
@@ -30,13 +28,13 @@ namespace ChannelETL.Tests
         [Fact]
         public async Task CancelledDuringRun_ThrowsOperationCanceledAndPartialConsumption()
         {
-            var source = new TestSource<int>(GenerateSequence(1, 1000));
-            var transform = new TestTransform<int, string>(async (i, ct) =>
+            var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 1000));
+            var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) =>
             {
                 await Task.Delay(20, ct);
                 return i.ToString();
             });
-            var destination = new TestDestination<string>();
+            var destination = TestComponents.CreateTestDestination<string>();
 
             var pipeline = new Pipeline<int, string>
             {
@@ -62,14 +60,16 @@ namespace ChannelETL.Tests
         [Fact]
         public async Task TransformThrows_RunThrowsAndDestinationReceivesPriorItems()
         {
-            var source = new TestSource<int>(Enumerable.Range(1, 5));
-            var transform = new TestTransform<int, string>(async (i, ct) =>
+            var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
+            var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) =>
             {
-                if (i == 3) throw new InvalidOperationException("boom");
+                if (i == 3)
+                    throw new InvalidOperationException("boom");
+
                 await Task.Yield();
                 return i.ToString();
             });
-            var destination = new TestDestination<string>();
+            var destination = TestComponents.CreateTestDestination<string>();
 
             var pipeline = new Pipeline<int, string>
             {
@@ -84,39 +84,6 @@ namespace ChannelETL.Tests
             var consumed = destination.Items.ToList();
             var expectedPrior = new List<string> { "1", "2" };
             Assert.Equal(expectedPrior, consumed);
-        }
-
-        private static IEnumerable<int> GenerateSequence(int start, int count)
-        {
-            for (int i = start; i < start + count; i++) yield return i;
-        }
-    }
-
-    internal class TestSource<T>(IEnumerable<T> items) : IPipelineSource<T>
-    {
-        public async IAsyncEnumerable<T> ProduceAsync([EnumeratorCancellation] CancellationToken token)
-        {
-            foreach (var item in items)
-            {
-                token.ThrowIfCancellationRequested();
-                yield return item;
-            }
-        }
-    }
-
-    internal class TestTransform<TIn, TOut>(Func<TIn, CancellationToken, Task<TOut>> fn) : IPipelineTransformation<TIn, TOut>
-    {
-        public Task<TOut> TransformAsync(TIn item, CancellationToken token) => fn(item, token);
-    }
-
-    internal class TestDestination<T> : IPipelineDestination<T>
-    {
-        private readonly ConcurrentQueue<T> _items = new();
-        public IEnumerable<T> Items => [.. _items];
-        public Task ConsumeAsync(T item, CancellationToken token)
-        {
-            _items.Enqueue(item);
-            return Task.CompletedTask;
         }
     }
 }

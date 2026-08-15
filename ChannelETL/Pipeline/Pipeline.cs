@@ -8,6 +8,8 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
     public required IPipelineTransformation<TSource, TDestination> Transform { get; init; }
     public required IPipelineDestination<TDestination> Destination { get; init; }
 
+    internal Pipeline() { }
+
     public async Task RunAsync(CancellationToken token)
     {
         var sourceChannel = Channel.CreateBounded<TSource>(new BoundedChannelOptions(100)
