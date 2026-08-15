@@ -7,11 +7,24 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
     public required IPipelineSource<TSource> Source { get; init; }
     public required IPipelineTransformation<TSource, TDestination> Transform { get; init; }
     public required IPipelineDestination<TDestination> Destination { get; init; }
+    public required string Name { get; init; }
+    public required IEnumerable<IPipeline> ParentPipelines { get; init; }
+
+    private readonly TaskCompletionSource _tcs = new();
+    public Task CompletionTask => _tcs.Task;
 
     internal Pipeline() { }
 
     public async Task RunAsync(CancellationToken token)
     {
+        await Task.WhenAll(ParentPipelines.Select(x => x.CompletionTask));
+
+        if (token.IsCancellationRequested)
+        {
+            _tcs.TrySetResult();
+            return;
+        }
+
         var sourceChannel = Channel.CreateBounded<TSource>(new BoundedChannelOptions(100)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -37,6 +50,8 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
         destinationChannel.Writer.Complete();
 
         await consumeTask;
+
+        _tcs.TrySetResult();
     }
 
     private async Task ProduceAsync(ChannelWriter<TSource> writer, CancellationToken token)

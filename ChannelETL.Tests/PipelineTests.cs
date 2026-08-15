@@ -15,7 +15,9 @@ namespace ChannelETL.Tests
             {
                 Source = source,
                 Transform = transform,
-                Destination = destination
+                Destination = destination,
+                Name = nameof(CompletesAndPreservesOrder),
+                ParentPipelines = []
             };
 
             await pipeline.RunAsync(CancellationToken.None);
@@ -40,7 +42,9 @@ namespace ChannelETL.Tests
             {
                 Source = source,
                 Transform = transform,
-                Destination = destination
+                Destination = destination,
+                Name = nameof(CancelledDuringRun_ThrowsOperationCanceledAndPartialConsumption),
+                ParentPipelines = []
             };
 
             using var cts = new CancellationTokenSource(100);
@@ -75,7 +79,9 @@ namespace ChannelETL.Tests
             {
                 Source = source,
                 Transform = transform,
-                Destination = destination
+                Destination = destination,
+                Name = nameof(TransformThrows_RunThrowsAndDestinationReceivesPriorItems),
+                ParentPipelines = []
             };
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () => await pipeline.RunAsync(CancellationToken.None));
