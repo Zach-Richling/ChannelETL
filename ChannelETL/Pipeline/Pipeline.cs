@@ -13,6 +13,8 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
     private readonly TaskCompletionSource<PipelineOutcome> _tcs = new();
     public Task<PipelineOutcome> CompletionTask => _tcs.Task;
 
+    private PipelineOutcome _outcome = PipelineOutcome.Success;
+
     internal Pipeline() { }
 
     public async Task RunAsync(CancellationToken token)
@@ -21,7 +23,7 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
 
         if (token.IsCancellationRequested || parentOutcomes.Any(x => x != PipelineOutcome.Success))
         {
-            _tcs.TrySetResult(PipelineOutcome.Canceled);
+            _tcs.SetResult(PipelineOutcome.Canceled);
             return;
         }
 
@@ -39,32 +41,46 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
             SingleWriter = true
         });
 
+        var produceTask = ProduceAsync(sourceChannel.Writer, token);
+        var transformTask = TransformAsync(sourceChannel.Reader, destinationChannel.Writer, token);
+        var consumeTask = ConsumeAsync(destinationChannel.Reader, token);
+
         try
         {
-            var produceTask = ProduceAsync(sourceChannel.Writer, token);
-            var transformTask = TransformAsync(sourceChannel.Reader, destinationChannel.Writer, token);
-            var consumeTask = ConsumeAsync(destinationChannel.Reader, token);
-
             await produceTask;
+        }
+        catch
+        {
+            _outcome = PipelineOutcome.Failure;
+        }
+        finally
+        {
             sourceChannel.Writer.Complete();
+        }
 
+        try
+        {
             await transformTask;
+        }
+        catch
+        {
+            _outcome = PipelineOutcome.Failure;
+        }
+        finally
+        {
             destinationChannel.Writer.Complete();
+        }
 
+        try
+        {
             await consumeTask;
         }
-        catch (OperationCanceledException)
+        catch
         {
-            _tcs.TrySetResult(PipelineOutcome.Canceled);
-            return;
-        }
-        catch (Exception)
-        {
-            _tcs.TrySetResult(PipelineOutcome.Failure);
-            return;
+            _outcome = PipelineOutcome.Failure;
         }
 
-        _tcs.TrySetResult(PipelineOutcome.Success);
+        _tcs.SetResult(token.IsCancellationRequested ? PipelineOutcome.Canceled : _outcome);
     }
 
     private async Task ProduceAsync(ChannelWriter<TSource> writer, CancellationToken token)
