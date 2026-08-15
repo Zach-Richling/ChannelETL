@@ -1,4 +1,4 @@
-﻿namespace ChannelETL.Pipeline;
+﻿namespace ChannelETL;
 
 public class PipelineBuilder<TSource, TDest>
 {

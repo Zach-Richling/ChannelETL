@@ -1,4 +1,4 @@
-﻿namespace ChannelETL.Pipeline;
+﻿namespace ChannelETL;
 
 public interface IPipeline
 {

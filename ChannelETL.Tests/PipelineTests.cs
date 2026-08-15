@@ -1,97 +1,94 @@
-using ChannelETL.Pipeline;
+namespace ChannelETL.Tests;
 
-namespace ChannelETL.Tests
+public class PipelineTests
 {
-    public class PipelineTests
+    [Fact]
+    public async Task CompletesAndPreservesOrder()
     {
-        [Fact]
-        public async Task CompletesAndPreservesOrder()
+        var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
+        var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) => i.ToString());
+        var destination = TestComponents.CreateTestDestination<string>();
+
+        var pipeline = new Pipeline<int, string>
         {
-            var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
-            var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) => i.ToString());
-            var destination = TestComponents.CreateTestDestination<string>();
+            Source = source,
+            Transform = transform,
+            Destination = destination,
+            Name = nameof(CompletesAndPreservesOrder),
+            ParentPipelines = []
+        };
 
-            var pipeline = new Pipeline<int, string>
-            {
-                Source = source,
-                Transform = transform,
-                Destination = destination,
-                Name = nameof(CompletesAndPreservesOrder),
-                ParentPipelines = []
-            };
+        await pipeline.RunAsync(CancellationToken.None);
+        var outcome = await pipeline.CompletionTask;
 
-            await pipeline.RunAsync(CancellationToken.None);
-            var outcome = await pipeline.CompletionTask;
+        var consumed = destination.Items.ToList();
+        var expected = Enumerable.Range(1, 5).Select(i => i.ToString()).ToList();
+        Assert.Equal(expected, consumed);
+        Assert.Equal(PipelineOutcome.Success, outcome);
+    }
 
-            var consumed = destination.Items.ToList();
-            var expected = Enumerable.Range(1, 5).Select(i => i.ToString()).ToList();
-            Assert.Equal(expected, consumed);
-            Assert.Equal(PipelineOutcome.Success, outcome);
-        }
-
-        [Fact]
-        public async Task CancelledDuringRun_PartialConsumption()
+    [Fact]
+    public async Task CancelledDuringRun_PartialConsumption()
+    {
+        var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 1000));
+        var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) =>
         {
-            var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 1000));
-            var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) =>
-            {
-                await Task.Delay(20, ct);
-                return i.ToString();
-            });
-            var destination = TestComponents.CreateTestDestination<string>();
+            await Task.Delay(20, ct);
+            return i.ToString();
+        });
+        var destination = TestComponents.CreateTestDestination<string>();
 
-            var pipeline = new Pipeline<int, string>
-            {
-                Source = source,
-                Transform = transform,
-                Destination = destination,
-                Name = nameof(CancelledDuringRun_PartialConsumption),
-                ParentPipelines = []
-            };
-
-            using var cts = new CancellationTokenSource(100);
-
-            await pipeline.RunAsync(cts.Token);
-            var outcome = await pipeline.CompletionTask;
-
-            var consumed = destination.Items.ToList();
-            Assert.True(consumed.Count > 0 && consumed.Count < 1000, "Destination should have consumed a partial number of items before cancellation.");
-
-            var asInts = consumed.Select(int.Parse).ToList();
-            Assert.Equal(asInts.OrderBy(x => x), asInts);
-            Assert.Equal(PipelineOutcome.Canceled, outcome);
-        }
-
-        [Fact]
-        public async Task TransformThrows_DestinationReceivesPriorItems()
+        var pipeline = new Pipeline<int, string>
         {
-            var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
-            var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) =>
-            {
-                if (i == 3)
-                    throw new InvalidOperationException("boom");
+            Source = source,
+            Transform = transform,
+            Destination = destination,
+            Name = nameof(CancelledDuringRun_PartialConsumption),
+            ParentPipelines = []
+        };
 
-                await Task.Yield();
-                return i.ToString();
-            });
-            var destination = TestComponents.CreateTestDestination<string>();
+        using var cts = new CancellationTokenSource(100);
 
-            var pipeline = new Pipeline<int, string>
-            {
-                Source = source,
-                Transform = transform,
-                Destination = destination,
-                Name = nameof(TransformThrows_DestinationReceivesPriorItems),
-                ParentPipelines = []
-            };
+        await pipeline.RunAsync(cts.Token);
+        var outcome = await pipeline.CompletionTask;
 
-            await pipeline.RunAsync(CancellationToken.None);
-            var outcome = await pipeline.CompletionTask;
+        var consumed = destination.Items.ToList();
+        Assert.True(consumed.Count > 0 && consumed.Count < 1000, "Destination should have consumed a partial number of items before cancellation.");
 
-            var consumed = destination.Items.ToList();
-            var expectedPrior = new List<string> { "1", "2" };
-            Assert.Equal(expectedPrior, consumed);
-            Assert.Equal(PipelineOutcome.Failure, outcome);
-        }
+        var asInts = consumed.Select(int.Parse).ToList();
+        Assert.Equal(asInts.OrderBy(x => x), asInts);
+        Assert.Equal(PipelineOutcome.Canceled, outcome);
+    }
+
+    [Fact]
+    public async Task TransformThrows_DestinationReceivesPriorItems()
+    {
+        var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
+        var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) =>
+        {
+            if (i == 3)
+                throw new InvalidOperationException("boom");
+
+            await Task.Yield();
+            return i.ToString();
+        });
+        var destination = TestComponents.CreateTestDestination<string>();
+
+        var pipeline = new Pipeline<int, string>
+        {
+            Source = source,
+            Transform = transform,
+            Destination = destination,
+            Name = nameof(TransformThrows_DestinationReceivesPriorItems),
+            ParentPipelines = []
+        };
+
+        await pipeline.RunAsync(CancellationToken.None);
+        var outcome = await pipeline.CompletionTask;
+
+        var consumed = destination.Items.ToList();
+        var expectedPrior = new List<string> { "1", "2" };
+        Assert.Equal(expectedPrior, consumed);
+        Assert.Equal(PipelineOutcome.Failure, outcome);
     }
 }

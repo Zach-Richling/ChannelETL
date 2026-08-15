@@ -1,6 +1,6 @@
 ﻿using System.Threading.Channels;
 
-namespace ChannelETL.Pipeline;
+namespace ChannelETL;
 
 public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
 {
