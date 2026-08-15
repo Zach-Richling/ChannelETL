@@ -102,9 +102,33 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
 
     private async Task ConsumeAsync(ChannelReader<TDestination> reader, CancellationToken token)
     {
-        await foreach (var record in reader.ReadAllAsync(token))
+        var destException = default(Exception);
+
+        try
         {
-            await Destination.ConsumeAsync(record, token);
+            await foreach (var record in reader.ReadAllAsync(token))
+            {
+                await Destination.ConsumeAsync(record, token);
+            }
         }
+        catch (Exception e)
+        {
+            destException = e;
+        }
+
+        try
+        {
+            await Destination.CompleteAsync(token);
+        }
+        catch (Exception e)
+        {
+            if (destException != null)
+                throw new AggregateException("Destination and completion both failed.", destException, e);
+
+            throw;
+        }
+
+        if (destException != null)
+            throw destException;
     }
 }

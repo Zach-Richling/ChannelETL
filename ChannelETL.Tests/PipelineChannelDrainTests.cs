@@ -30,6 +30,7 @@ public class PipelineChannelDrainTests
         // destination should have consumed all items that were produced
         Assert.Equal(5, destination.Items.Count());
         Assert.Equal(PipelineOutcome.Failure, outcome);
+        Assert.True(destination.CalledComplete);
     }
 
     [Fact]
@@ -56,6 +57,7 @@ public class PipelineChannelDrainTests
 
         // destination should have consumed only the transformed items (1..2)
         Assert.Equal(new[] { 1, 2 }, destination.Items.ToArray());
+        Assert.True(destination.CalledComplete);
     }
 
     [Fact]
@@ -82,6 +84,7 @@ public class PipelineChannelDrainTests
 
         // destination recorded items up to the thrown item
         Assert.Equal(new[] { 1 }, destination.ConsumedSoFar.ToArray());
+        Assert.True(destination.CalledComplete);
     }
 
     // Helpers
@@ -163,6 +166,14 @@ public class PipelineChannelDrainTests
     {
         private readonly ConcurrentQueue<T> _items = new();
         public IEnumerable<T> Items => _items.ToArray();
+        public bool CalledComplete { get; private set; } = false;
+
+        public Task CompleteAsync(CancellationToken token)
+        {
+            CalledComplete = true;
+            return Task.CompletedTask;
+        }
+
         public Task ConsumeAsync(T item, CancellationToken token)
         {
             _items.Enqueue(item);
@@ -176,10 +187,19 @@ public class PipelineChannelDrainTests
         private readonly T _throwOn;
         private readonly bool _hasThrowOn;
         public IEnumerable<T> ConsumedSoFar => _consumed.ToArray();
+
+        public bool CalledComplete { get; private set; } = false;
+
         public ThrowingDestination(T throwOnConsume)
         {
             _throwOn = throwOnConsume;
             _hasThrowOn = true;
+        }
+
+        public Task CompleteAsync(CancellationToken token)
+        {
+            CalledComplete = true;
+            return Task.CompletedTask;
         }
 
         public Task ConsumeAsync(T item, CancellationToken token)

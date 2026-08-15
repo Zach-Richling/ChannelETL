@@ -31,6 +31,9 @@ internal static class TestComponents
     {
         private readonly ConcurrentQueue<T> _items = new();
         public IEnumerable<T> Items => [.. _items];
+
+        public Task CompleteAsync(CancellationToken token) => Task.CompletedTask;
+
         public Task ConsumeAsync(T item, CancellationToken token)
         {
             _items.Enqueue(item);

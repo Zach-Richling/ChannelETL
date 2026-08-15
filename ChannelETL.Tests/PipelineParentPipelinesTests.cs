@@ -308,10 +308,13 @@ public class PipelineParentPipelinesTests
     {
         private readonly ConcurrentQueue<T> _items = new();
         public IEnumerable<T> Items => _items.ToArray();
+
         public Task ConsumeAsync(T item, CancellationToken token)
         {
             _items.Enqueue(item);
             return Task.CompletedTask;
         }
+
+        public Task CompleteAsync(CancellationToken token) => Task.CompletedTask;
     }
 }
