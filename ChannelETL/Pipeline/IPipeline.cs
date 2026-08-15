@@ -12,7 +12,7 @@ public interface IPipeline
     Task RunAsync(CancellationToken token);
 
     //A task that represents the completion of the pipeline's execution
-    Task CompletionTask { get; }
+    Task<PipelineOutcome> CompletionTask { get; }
 }
 
 public interface IPipeline<TSource, TDestination> : IPipeline
