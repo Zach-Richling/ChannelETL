@@ -1,8 +1,11 @@
-﻿using System.Threading.Channels;
+﻿using Microsoft.Extensions.Logging;
+using System.Threading.Channels;
 
 namespace ChannelETL;
 
-public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
+public class Pipeline<TSource, TDestination>(
+    ILogger<Pipeline<TSource, TDestination>> logger)
+    : IPipeline<TSource, TDestination>
 {
     public required IPipelineSource<TSource> Source { get; init; }
     public required IPipelineTransformation<TSource, TDestination> Transform { get; init; }
@@ -15,8 +18,9 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
 
     private PipelineOutcome _outcome = PipelineOutcome.Success;
 
-    internal Pipeline() { }
-
+    /// <summary>
+    /// Runs the pipeline asynchronously, logging information and errors.
+    /// </summary>
     public async Task RunAsync(CancellationToken token)
     {
         var parentOutcomes = await Task.WhenAll(ParentPipelines.Select(x => x.CompletionTask));
@@ -41,6 +45,7 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
             SingleWriter = true
         });
 
+        logger.LogInformation("Starting pipeline execution...");
         var produceTask = ProduceAsync(sourceChannel.Writer, token);
         var transformTask = TransformAsync(sourceChannel.Reader, destinationChannel.Writer, token);
         var consumeTask = ConsumeAsync(destinationChannel.Reader, token);
@@ -49,8 +54,10 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
         {
             await produceTask;
         }
-        catch
+        catch (OperationCanceledException) { }
+        catch (Exception e)
         {
+            logger.LogError(e, "An error occurred while producing data.");
             _outcome = PipelineOutcome.Failure;
         }
         finally
@@ -62,8 +69,10 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
         {
             await transformTask;
         }
-        catch
+        catch (OperationCanceledException) { }
+        catch (Exception e)
         {
+            logger.LogError(e, "An error occurred while transforming data.");
             _outcome = PipelineOutcome.Failure;
         }
         finally
@@ -75,12 +84,17 @@ public class Pipeline<TSource, TDestination> : IPipeline<TSource, TDestination>
         {
             await consumeTask;
         }
-        catch
+        catch (OperationCanceledException) { }
+        catch (Exception e)
         {
+            logger.LogError(e, "An error occurred while consuming data.");
             _outcome = PipelineOutcome.Failure;
         }
 
-        _tcs.SetResult(token.IsCancellationRequested ? PipelineOutcome.Canceled : _outcome);
+        _outcome = token.IsCancellationRequested ? PipelineOutcome.Canceled : _outcome;
+
+        logger.LogInformation("Pipeline execution completed with status: {PipelineOutcome}", _outcome);
+        _tcs.SetResult(_outcome);
     }
 
     private async Task ProduceAsync(ChannelWriter<TSource> writer, CancellationToken token)

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using NSubstitute;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
@@ -11,8 +13,9 @@ public class PipelineChannelDrainTests
         var source = new ThrowingSource<int>(Enumerable.Range(1, 5), throwAfterYield: true);
         var transform = new PassthroughTransform<int>(delayMs: 500);
         var destination = new RecordingDestination<int>();
+        var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var pipeline = new Pipeline<int, int>
+        var pipeline = new Pipeline<int, int>(logger)
         {
             Name = nameof(ProduceThrows_DestinationDrainedBeforeReturn),
             ParentPipelines = Array.Empty<IPipeline>(),
@@ -39,8 +42,9 @@ public class PipelineChannelDrainTests
         var source = new SimpleSource<int>(Enumerable.Range(1, 5));
         var transform = new ThrowingTransform<int, int>(throwOn: 3, delayMs: 500);
         var destination = new RecordingDestination<int>();
+        var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var pipeline = new Pipeline<int, int>
+        var pipeline = new Pipeline<int, int>(logger)
         {
             Name = nameof(TransformThrows_DestinationDrainedOfTransformedItemsBeforeReturn),
             ParentPipelines = Array.Empty<IPipeline>(),
@@ -66,8 +70,9 @@ public class PipelineChannelDrainTests
         var source = new SimpleSource<int>(Enumerable.Range(1, 5));
         var transform = new PassthroughTransform<int>(delayMs: 500);
         var destination = new ThrowingDestination<int>(throwOnConsume: 2);
+        var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var pipeline = new Pipeline<int, int>
+        var pipeline = new Pipeline<int, int>(logger)
         {
             Name = nameof(ConsumeThrows_DestinationDrainedUpToThrowBeforeReturn),
             ParentPipelines = Array.Empty<IPipeline>(),

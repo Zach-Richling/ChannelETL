@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+
 namespace ChannelETL.Tests;
 
 public class PipelineTests
@@ -8,8 +11,9 @@ public class PipelineTests
         var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
         var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) => i.ToString());
         var destination = TestComponents.CreateTestDestination<string>();
+        var logger = Substitute.For<ILogger<Pipeline<int, string>>>();
 
-        var pipeline = new Pipeline<int, string>
+        var pipeline = new Pipeline<int, string>(logger)
         {
             Source = source,
             Transform = transform,
@@ -37,8 +41,9 @@ public class PipelineTests
             return i.ToString();
         });
         var destination = TestComponents.CreateTestDestination<string>();
+        var logger = Substitute.For<ILogger<Pipeline<int, string>>>();
 
-        var pipeline = new Pipeline<int, string>
+        var pipeline = new Pipeline<int, string>(logger)
         {
             Source = source,
             Transform = transform,
@@ -73,8 +78,9 @@ public class PipelineTests
             return i.ToString();
         });
         var destination = TestComponents.CreateTestDestination<string>();
+        var logger = Substitute.For<ILogger<Pipeline<int, string>>>();
 
-        var pipeline = new Pipeline<int, string>
+        var pipeline = new Pipeline<int, string>(logger)
         {
             Source = source,
             Transform = transform,
