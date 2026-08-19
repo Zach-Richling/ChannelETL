@@ -6,8 +6,12 @@ namespace ChannelETL.Tests;
 
 public class PipelineChannelDrainTests
 {
-    private static PipelineExecutionContext CreateContext(IEnumerable<IPipeline> parentPipelines)
-        => new(parentPipelines, NullLogger.Instance, CancellationToken.None);
+    private static PipelineExecutionContext CreateContext(IEnumerable<IPipeline> parentPipelines, CancellationToken? token = null) => new()
+    {
+        ParentPipelines = parentPipelines,
+        Logger = NullLogger.Instance,
+        Token = token ?? CancellationToken.None
+    };
 
     [Fact]
     public async Task ProduceThrows_DestinationDrainedBeforeReturn()

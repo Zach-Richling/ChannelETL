@@ -2,4 +2,9 @@
 
 namespace ChannelETL;
 
-public record PipelineExecutionContext(IEnumerable<IPipeline> ParentPipelines, ILogger Logger, CancellationToken Token);
+public readonly struct PipelineExecutionContext()
+{
+    public required IEnumerable<IPipeline> ParentPipelines { get; init; }
+    public required ILogger Logger { get; init; }
+    public required CancellationToken Token { get; init; }
+};

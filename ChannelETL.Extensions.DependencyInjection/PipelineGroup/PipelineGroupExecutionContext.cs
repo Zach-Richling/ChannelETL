@@ -3,4 +3,9 @@ using Microsoft.Extensions.Logging;
 
 namespace ChannelETL.Extensions.DependencyInjection;
 
-public record PipelineGroupExecutionContext(IServiceScopeFactory ScopeFactory, ILogger Logger, CancellationToken Token);
+public readonly struct PipelineGroupExecutionContext()
+{
+    public required IServiceScopeFactory ScopeFactory { get; init; }
+    public required ILogger Logger { get; init; }
+    public required CancellationToken Token { get; init; }
+};

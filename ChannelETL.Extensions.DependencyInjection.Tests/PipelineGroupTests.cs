@@ -20,11 +20,12 @@ public class PipelineGroupTests
     {
         var group = new TestPipelineGroup();
 
-        var context = new PipelineGroupExecutionContext(
-            Services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger.Instance,
-            CancellationToken.None
-        );
+        var context = new PipelineGroupExecutionContext()
+        {
+            ScopeFactory = Services.GetRequiredService<IServiceScopeFactory>(),
+            Logger = NullLogger.Instance,
+            Token = CancellationToken.None
+        };
 
         // Act
         await group.RunAsync(context);
@@ -43,11 +44,12 @@ public class PipelineGroupTests
     {
         var group = new ManyParentsPipelineGroup();
 
-        var context = new PipelineGroupExecutionContext(
-            Services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger.Instance,
-            CancellationToken.None
-        );
+        var context = new PipelineGroupExecutionContext()
+        {
+            ScopeFactory = Services.GetRequiredService<IServiceScopeFactory>(),
+            Logger = NullLogger.Instance,
+            Token = CancellationToken.None
+        };
 
         // Act
         await group.RunAsync(context);

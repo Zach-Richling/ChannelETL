@@ -8,8 +8,12 @@ namespace ChannelETL.Tests;
 
 public class PipelineParentPipelinesTests
 {
-    private static PipelineExecutionContext CreateContext(IEnumerable<IPipeline> parentPipelines, CancellationToken? token = null)
-        => new(parentPipelines, NullLogger.Instance, token ?? CancellationToken.None);
+    private static PipelineExecutionContext CreateContext(IEnumerable<IPipeline> parentPipelines, CancellationToken? token = null) => new()
+    {
+        ParentPipelines = parentPipelines,
+        Logger = NullLogger.Instance,
+        Token = token ?? CancellationToken.None
+    };
 
     [Fact]
     public async Task ChildDoesNotStartProduceUntilParentsComplete()

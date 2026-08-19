@@ -79,7 +79,12 @@ public abstract class PipelineGroup : IPipelineGroup
                 var logger = (ILogger)provider.GetRequiredService(_cachedLoggerTypes![i]);
 
                 var parentPipelines = ResolveParentPipelines(builder.ParentPipelines, pipelines);
-                var pipelineContext = new PipelineExecutionContext(parentPipelines, logger, context.Token);
+                var pipelineContext = new PipelineExecutionContext()
+                {
+                    ParentPipelines = parentPipelines,
+                    Logger = logger,
+                    Token = context.Token
+                };
 
                 tasks[i] = pipelines[i].RunAsync(pipelineContext);
             }
