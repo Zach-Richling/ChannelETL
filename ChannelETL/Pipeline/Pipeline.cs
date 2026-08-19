@@ -3,15 +3,13 @@ using System.Threading.Channels;
 
 namespace ChannelETL;
 
-public class Pipeline<TSource, TDestination>(
-    ILogger<Pipeline<TSource, TDestination>> logger)
-    : IPipeline<TSource, TDestination>
+public abstract class Pipeline<TSource, TDestination>(
+    IPipelineSource<TSource> source,
+    IPipelineTransformation<TSource, TDestination> transform,
+    IPipelineDestination<TDestination> destination)
+    : IPipeline
 {
-    public required IPipelineSource<TSource> Source { get; init; }
-    public required IPipelineTransformation<TSource, TDestination> Transform { get; init; }
-    public required IPipelineDestination<TDestination> Destination { get; init; }
-    public required string Name { get; init; }
-    public required IEnumerable<IPipeline> ParentPipelines { get; init; }
+    public string Name { get; init; } = "";
 
     private readonly TaskCompletionSource<PipelineOutcome> _tcs = new();
     public Task<PipelineOutcome> CompletionTask => _tcs.Task;
@@ -21,11 +19,12 @@ public class Pipeline<TSource, TDestination>(
     /// <summary>
     /// Runs the pipeline asynchronously, logging information and errors.
     /// </summary>
-    public async Task RunAsync(CancellationToken token)
+    public async Task RunAsync(PipelineExecutionContext context)
     {
-        var parentOutcomes = await Task.WhenAll(ParentPipelines.Select(x => x.CompletionTask));
+        //TODO: Retries, Parallelism, and Deadletter
+        var parentOutcomes = await Task.WhenAll(context.ParentPipelines.Select(x => x.CompletionTask));
 
-        if (token.IsCancellationRequested || parentOutcomes.Any(x => x != PipelineOutcome.Success))
+        if (context.Token.IsCancellationRequested || parentOutcomes.Any(x => x != PipelineOutcome.Success))
         {
             _tcs.SetResult(PipelineOutcome.Canceled);
             return;
@@ -45,10 +44,10 @@ public class Pipeline<TSource, TDestination>(
             SingleWriter = true
         });
 
-        logger.LogInformation("Starting pipeline execution...");
-        var produceTask = ProduceAsync(sourceChannel.Writer, token);
-        var transformTask = TransformAsync(sourceChannel.Reader, destinationChannel.Writer, token);
-        var consumeTask = ConsumeAsync(destinationChannel.Reader, token);
+        context.Logger.LogInformation("Starting pipeline execution...");
+        var produceTask = ProduceAsync(sourceChannel.Writer, context.Token);
+        var transformTask = TransformAsync(sourceChannel.Reader, destinationChannel.Writer, context.Token);
+        var consumeTask = ConsumeAsync(destinationChannel.Reader, context.Token);
 
         try
         {
@@ -57,7 +56,7 @@ public class Pipeline<TSource, TDestination>(
         catch (OperationCanceledException) { }
         catch (Exception e)
         {
-            logger.LogError(e, "An error occurred while producing data.");
+            context.Logger.LogError(e, "An error occurred while producing data.");
             _outcome = PipelineOutcome.Failure;
         }
         finally
@@ -72,7 +71,7 @@ public class Pipeline<TSource, TDestination>(
         catch (OperationCanceledException) { }
         catch (Exception e)
         {
-            logger.LogError(e, "An error occurred while transforming data.");
+            context.Logger.LogError(e, "An error occurred while transforming data.");
             _outcome = PipelineOutcome.Failure;
         }
         finally
@@ -87,19 +86,19 @@ public class Pipeline<TSource, TDestination>(
         catch (OperationCanceledException) { }
         catch (Exception e)
         {
-            logger.LogError(e, "An error occurred while consuming data.");
+            context.Logger.LogError(e, "An error occurred while consuming data.");
             _outcome = PipelineOutcome.Failure;
         }
 
-        _outcome = token.IsCancellationRequested ? PipelineOutcome.Canceled : _outcome;
+        _outcome = context.Token.IsCancellationRequested ? PipelineOutcome.Canceled : _outcome;
 
-        logger.LogInformation("Pipeline execution completed with status: {PipelineOutcome}", _outcome);
+        context.Logger.LogInformation("Pipeline execution completed with status: {PipelineOutcome}", _outcome);
         _tcs.SetResult(_outcome);
     }
 
     private async Task ProduceAsync(ChannelWriter<TSource> writer, CancellationToken token)
     {
-        await foreach (var record in Source.ProduceAsync(token))
+        await foreach (var record in source.ProduceAsync(token))
         {
             await writer.WriteAsync(record, token);
         }
@@ -109,7 +108,7 @@ public class Pipeline<TSource, TDestination>(
     {
         await foreach (var record in reader.ReadAllAsync(token))
         {
-            var transformed = await Transform.TransformAsync(record, token);
+            var transformed = await transform.TransformAsync(record, token);
             await writer.WriteAsync(transformed, token);
         }
     }
@@ -122,7 +121,7 @@ public class Pipeline<TSource, TDestination>(
         {
             await foreach (var record in reader.ReadAllAsync(token))
             {
-                await Destination.ConsumeAsync(record, token);
+                await destination.ConsumeAsync(record, token);
             }
         }
         catch (Exception e)
@@ -132,7 +131,7 @@ public class Pipeline<TSource, TDestination>(
 
         try
         {
-            await Destination.CompleteAsync(token);
+            await destination.CompleteAsync(token);
         }
         catch (Exception e)
         {

@@ -1,28 +1,28 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace ChannelETL.Tests;
 
 public class PipelineTests
 {
+    private static PipelineExecutionContext CreateContext(IEnumerable<IPipeline> parentPipelines, CancellationToken? token = null)
+        => new(parentPipelines, NullLogger.Instance, token ?? CancellationToken.None);
+
     [Fact]
     public async Task CompletesAndPreservesOrder()
     {
         var source = TestComponents.CreateTestSource(() => AsyncEnumerable.Range(1, 5));
         var transform = TestComponents.CreateTestTransform<int, string>(async (i, ct) => i.ToString());
         var destination = TestComponents.CreateTestDestination<string>();
-        var logger = Substitute.For<ILogger<Pipeline<int, string>>>();
+        var logger = Substitute.For<ILogger<TestPipeline>>();
 
-        var pipeline = new Pipeline<int, string>(logger)
+        var pipeline = new TestPipeline(source, transform, destination)
         {
-            Source = source,
-            Transform = transform,
-            Destination = destination,
             Name = nameof(CompletesAndPreservesOrder),
-            ParentPipelines = []
         };
 
-        await pipeline.RunAsync(CancellationToken.None);
+        await pipeline.RunAsync(CreateContext([]));
         var outcome = await pipeline.CompletionTask;
 
         var consumed = destination.Items.ToList();
@@ -41,20 +41,16 @@ public class PipelineTests
             return i.ToString();
         });
         var destination = TestComponents.CreateTestDestination<string>();
-        var logger = Substitute.For<ILogger<Pipeline<int, string>>>();
+        var logger = Substitute.For<ILogger<TestPipeline>>();
 
-        var pipeline = new Pipeline<int, string>(logger)
+        var pipeline = new TestPipeline(source, transform, destination)
         {
-            Source = source,
-            Transform = transform,
-            Destination = destination,
             Name = nameof(CancelledDuringRun_PartialConsumption),
-            ParentPipelines = []
         };
 
         using var cts = new CancellationTokenSource(100);
 
-        await pipeline.RunAsync(cts.Token);
+        await pipeline.RunAsync(CreateContext([], cts.Token));
         var outcome = await pipeline.CompletionTask;
 
         var consumed = destination.Items.ToList();
@@ -78,18 +74,14 @@ public class PipelineTests
             return i.ToString();
         });
         var destination = TestComponents.CreateTestDestination<string>();
-        var logger = Substitute.For<ILogger<Pipeline<int, string>>>();
+        var logger = Substitute.For<ILogger<TestPipeline>>();
 
-        var pipeline = new Pipeline<int, string>(logger)
+        var pipeline = new TestPipeline(source, transform, destination)
         {
-            Source = source,
-            Transform = transform,
-            Destination = destination,
             Name = nameof(TransformThrows_DestinationReceivesPriorItems),
-            ParentPipelines = []
         };
 
-        await pipeline.RunAsync(CancellationToken.None);
+        await pipeline.RunAsync(CreateContext([]));
         var outcome = await pipeline.CompletionTask;
 
         var consumed = destination.Items.ToList();
@@ -97,4 +89,10 @@ public class PipelineTests
         Assert.Equal(expectedPrior, consumed);
         Assert.Equal(PipelineOutcome.Failure, outcome);
     }
+
+    public class TestPipeline(
+        IPipelineSource<int> source,
+        IPipelineTransformation<int, string> transform,
+        IPipelineDestination<string> destination)
+        : Pipeline<int, string>(source, transform, destination);
 }

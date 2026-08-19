@@ -1,5 +1,4 @@
-using Microsoft.Extensions.Logging;
-using NSubstitute;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
@@ -7,24 +6,22 @@ namespace ChannelETL.Tests;
 
 public class PipelineChannelDrainTests
 {
+    private static PipelineExecutionContext CreateContext(IEnumerable<IPipeline> parentPipelines)
+        => new(parentPipelines, NullLogger.Instance, CancellationToken.None);
+
     [Fact]
     public async Task ProduceThrows_DestinationDrainedBeforeReturn()
     {
         var source = new ThrowingSource<int>(Enumerable.Range(1, 5), throwAfterYield: true);
         var transform = new PassthroughTransform<int>(delayMs: 500);
         var destination = new RecordingDestination<int>();
-        var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var pipeline = new Pipeline<int, int>(logger)
+        var pipeline = new TestPipeline(source, transform, destination)
         {
-            Name = nameof(ProduceThrows_DestinationDrainedBeforeReturn),
-            ParentPipelines = Array.Empty<IPipeline>(),
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = nameof(ProduceThrows_DestinationDrainedBeforeReturn)
         };
 
-        await pipeline.RunAsync(CancellationToken.None);
+        await pipeline.RunAsync(CreateContext([]));
         var outcome = await pipeline.CompletionTask;
 
         // source should have produced all items before throwing
@@ -42,18 +39,13 @@ public class PipelineChannelDrainTests
         var source = new SimpleSource<int>(Enumerable.Range(1, 5));
         var transform = new ThrowingTransform<int, int>(throwOn: 3, delayMs: 500);
         var destination = new RecordingDestination<int>();
-        var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var pipeline = new Pipeline<int, int>(logger)
+        var pipeline = new TestPipeline(source, transform, destination)
         {
-            Name = nameof(TransformThrows_DestinationDrainedOfTransformedItemsBeforeReturn),
-            ParentPipelines = Array.Empty<IPipeline>(),
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = nameof(TransformThrows_DestinationDrainedOfTransformedItemsBeforeReturn)
         };
 
-        await pipeline.RunAsync(CancellationToken.None);
+        await pipeline.RunAsync(CreateContext([]));
         var outcome = await pipeline.CompletionTask;
 
         // transform should have thrown when processing item 3
@@ -70,18 +62,13 @@ public class PipelineChannelDrainTests
         var source = new SimpleSource<int>(Enumerable.Range(1, 5));
         var transform = new PassthroughTransform<int>(delayMs: 500);
         var destination = new ThrowingDestination<int>(throwOnConsume: 2);
-        var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var pipeline = new Pipeline<int, int>(logger)
+        var pipeline = new TestPipeline(source, transform, destination)
         {
-            Name = nameof(ConsumeThrows_DestinationDrainedUpToThrowBeforeReturn),
-            ParentPipelines = Array.Empty<IPipeline>(),
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = nameof(ConsumeThrows_DestinationDrainedUpToThrowBeforeReturn)
         };
 
-        await pipeline.RunAsync(CancellationToken.None);
+        await pipeline.RunAsync(CreateContext([]));
         var outcome = await pipeline.CompletionTask;
 
         // pipeline should have recorded failure
@@ -93,6 +80,12 @@ public class PipelineChannelDrainTests
     }
 
     // Helpers
+    public class TestPipeline(
+        IPipelineSource<int> source,
+        IPipelineTransformation<int, int> transform,
+        IPipelineDestination<int> destination)
+        : Pipeline<int, int>(source, transform, destination);
+
     private class SimpleSource<T>(IEnumerable<T> items) : IPipelineSource<T>
     {
         public int Produced;
@@ -131,36 +124,26 @@ public class PipelineChannelDrainTests
         }
     }
 
-    private class PassthroughTransform<T> : IPipelineTransformation<T, T>
+    private class PassthroughTransform<T>(int delayMs = 0) : IPipelineTransformation<T, T>
     {
-        private readonly int _delayMs;
-        public PassthroughTransform(int delayMs = 0) => _delayMs = delayMs;
         public async Task<T> TransformAsync(T item, CancellationToken token)
         {
-            if (_delayMs > 0)
-                await Task.Delay(_delayMs, token);
+            if (delayMs > 0)
+                await Task.Delay(delayMs, token);
             return item;
         }
     }
 
-    private class ThrowingTransform<TIn, TOut> : IPipelineTransformation<TIn, TOut>
+    private class ThrowingTransform<TIn, TOut>(TIn throwOn, int delayMs = 0) : IPipelineTransformation<TIn, TOut>
     {
-        private readonly TIn _throwOn;
-        private readonly bool _hasThrowOn;
-        private readonly int _delayMs;
-        public ThrowingTransform(TIn throwOn, int delayMs = 0)
-        {
-            _throwOn = throwOn;
-            _hasThrowOn = true;
-            _delayMs = delayMs;
-        }
+        private readonly bool _hasThrowOn = true;
 
         public async Task<TOut> TransformAsync(TIn item, CancellationToken token)
         {
-            if (_delayMs > 0)
-                await Task.Delay(_delayMs, token);
+            if (delayMs > 0)
+                await Task.Delay(delayMs, token);
 
-            if (_hasThrowOn && EqualityComparer<TIn>.Default.Equals(item, _throwOn))
+            if (_hasThrowOn && EqualityComparer<TIn>.Default.Equals(item, throwOn))
                 throw new InvalidOperationException("transform boom");
 
             return (TOut)(object)item!;

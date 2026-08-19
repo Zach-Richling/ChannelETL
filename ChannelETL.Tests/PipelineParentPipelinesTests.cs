@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
@@ -7,6 +8,9 @@ namespace ChannelETL.Tests;
 
 public class PipelineParentPipelinesTests
 {
+    private static PipelineExecutionContext CreateContext(IEnumerable<IPipeline> parentPipelines, CancellationToken? token = null)
+        => new(parentPipelines, NullLogger.Instance, token ?? CancellationToken.None);
+
     [Fact]
     public async Task ChildDoesNotStartProduceUntilParentsComplete()
     {
@@ -17,18 +21,13 @@ public class PipelineParentPipelinesTests
         var source = new TestSource<int>(Enumerable.Range(1, 1), childTcs);
         var transform = new TestTransform<int, int>(async (i, ct) => { await Task.Yield(); return i; });
         var destination = new TestDestination<int>();
-        var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
             Name = "child",
-            ParentPipelines = [parent],
-            Source = source,
-            Transform = transform,
-            Destination = destination
         };
 
-        var runTask = child.RunAsync(CancellationToken.None);
+        var runTask = child.RunAsync(CreateContext([parent]));
 
         // give the runtime a moment to start awaiting parents
         await Task.Delay(1000, CancellationToken.None);
@@ -60,16 +59,12 @@ public class PipelineParentPipelinesTests
         var destination = new TestDestination<int>();
         var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
-            Name = "child-mixed",
-            ParentPipelines = [parent1, parent2],
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = "child-mixed"
         };
 
-        var runTask = child.RunAsync(CancellationToken.None);
+        var runTask = child.RunAsync(CreateContext([parent1, parent2]));
 
         // complete one parent as success and the other as failure
         p1.SetResult(PipelineOutcome.Success);
@@ -93,16 +88,12 @@ public class PipelineParentPipelinesTests
         var destination = new TestDestination<int>();
         var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
-            Name = "child-parent-exception",
-            ParentPipelines = [parent],
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = "child-parent-exception"
         };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await child.RunAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await child.RunAsync(CreateContext([parent])));
         // CompletionTask should not be completed because RunAsync threw before setting outcome
         Assert.False(child.CompletionTask.IsCompleted);
     }
@@ -115,19 +106,15 @@ public class PipelineParentPipelinesTests
         var destination = new TestDestination<int>();
         var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
-            Name = "child-pre-canceled",
-            ParentPipelines = [],
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = "child-pre-canceled"
         };
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        await child.RunAsync(cts.Token);
+        await child.RunAsync(CreateContext([], cts.Token));
         var outcome = await child.CompletionTask;
 
         Assert.Equal(PipelineOutcome.Canceled, outcome);
@@ -149,16 +136,12 @@ public class PipelineParentPipelinesTests
         var destination = new TestDestination<int>();
         var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
-            Name = "child-multi",
-            ParentPipelines = [parent1, parent2],
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = "child-multi"
         };
 
-        var runTask = child.RunAsync(CancellationToken.None);
+        var runTask = child.RunAsync(CreateContext([parent1, parent2]));
 
         await Task.Delay(1000, CancellationToken.None);
         Assert.False(childCts.Task.IsCompleted);
@@ -190,16 +173,12 @@ public class PipelineParentPipelinesTests
         var destination = new TestDestination<int>();
         var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
-            Name = "child-on-parent-fail",
-            ParentPipelines = new[] { parent },
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = "child-on-parent-fail"
         };
 
-        var runTask = child.RunAsync(CancellationToken.None);
+        var runTask = child.RunAsync(CreateContext([parent]));
 
         await Task.Delay(50, CancellationToken.None);
         Assert.False(produceStarted.Task.IsCompleted, "Produce should not have started before parent completes.");
@@ -226,16 +205,12 @@ public class PipelineParentPipelinesTests
         var destination = new TestDestination<int>();
         var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
-            Name = "child-on-parent-canceled",
-            ParentPipelines = new[] { parent },
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = "child-on-parent-canceled"
         };
 
-        var runTask = child.RunAsync(CancellationToken.None);
+        var runTask = child.RunAsync(CreateContext([parent]));
 
         await Task.Delay(50, CancellationToken.None);
         Assert.False(produceStarted.Task.IsCompleted);
@@ -262,16 +237,12 @@ public class PipelineParentPipelinesTests
         var destination = new TestDestination<int>();
         var logger = Substitute.For<ILogger<Pipeline<int, int>>>();
 
-        var child = new Pipeline<int, int>(logger)
+        var child = new TestChildPipeline(source, transform, destination)
         {
-            Name = "child-on-parent-success",
-            ParentPipelines = new[] { parent },
-            Source = source,
-            Transform = transform,
-            Destination = destination
+            Name = "child-on-parent-success"
         };
 
-        var runTask = child.RunAsync(CancellationToken.None);
+        var runTask = child.RunAsync(CreateContext([parent]));
 
         await Task.Delay(50, CancellationToken.None);
         Assert.False(produceStarted.Task.IsCompleted);
@@ -290,9 +261,16 @@ public class PipelineParentPipelinesTests
     {
         public string Name { get; } = name;
         public IEnumerable<IPipeline> ParentPipelines => [];
-        public Task RunAsync(CancellationToken token) => Task.CompletedTask;
+        public Task RunAsync(PipelineExecutionContext context) => Task.CompletedTask;
         public Task<PipelineOutcome> CompletionTask => completionTask;
     }
+
+    private class TestChildPipeline(
+        IPipelineSource<int> source,
+        IPipelineTransformation<int, int> transform,
+        IPipelineDestination<int> destination)
+        : Pipeline<int, int>(source, transform, destination)
+    { }
 
     // reuse small test helpers similar to PipelineTests
     private class TestSource<T>(IEnumerable<T> items, TaskCompletionSource<bool>? started = null) : IPipelineSource<T>

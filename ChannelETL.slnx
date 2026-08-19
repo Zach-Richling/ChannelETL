@@ -1,4 +1,6 @@
 <Solution>
+  <Project Path="ChannelETL.Extensions.DependencyInjection.Tests/ChannelETL.Extensions.DependencyInjection.Tests.csproj" Id="9c9912bc-342f-499b-90ee-f012dc7b6433" />
+  <Project Path="ChannelETL.Extensions.DependencyInjection/ChannelETL.Extensions.DependencyInjection.csproj" Id="da643cfe-f7ad-4c4f-bb33-d63821fd1138" />
   <Project Path="ChannelETL.Tests/ChannelETL.Tests.csproj" Id="c0d7652e-6de5-4258-b72c-45717781fe2e" />
   <Project Path="ChannelETL/ChannelETL.csproj" />
 </Solution>
