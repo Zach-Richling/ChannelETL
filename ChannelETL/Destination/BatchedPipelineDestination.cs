@@ -35,7 +35,11 @@ public abstract class BatchedPipelineDestination<TDest> : IPipelineDestination<T
         }
     }
 
-    async Task IPipelineDestination<TDest>.CompleteAsync(CancellationToken token)
+    /// <summary>
+    /// Completes the pipeline and flushes any remaining items in the batch.
+    /// You must call the base method if implementing a custom destination to ensure that all items are processed.
+    /// </summary>
+    public virtual async Task CompleteAsync(CancellationToken token)
     {
         await _lock.WaitAsync(token);
 
