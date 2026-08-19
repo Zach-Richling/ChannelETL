@@ -9,9 +9,9 @@ public class BatchedPipelineDestinationTests
         public TestBatchedDestination() { }
         public TestBatchedDestination(int batchSize) : base(batchSize) { }
 
-        public override Task ConsumeBatchAsync(IEnumerable<int> batch, CancellationToken token)
+        public override Task ConsumeBatchAsync(IReadOnlyList<int> batch, CancellationToken token)
         {
-            ReceivedBatches.Add(batch.ToList());
+            ReceivedBatches.Add([.. batch]);
             return Task.CompletedTask;
         }
     }
@@ -28,8 +28,7 @@ public class BatchedPipelineDestinationTests
         }
 
         // After 10 items (default batch size) one batch should have been emitted
-        Assert.Single(dest.ReceivedBatches);
-        var batch = dest.ReceivedBatches[0];
+        var batch = Assert.Single(dest.ReceivedBatches);
         Assert.Equal(10, batch.Count);
         Assert.Equal(Enumerable.Range(1, 10), batch);
     }
@@ -46,8 +45,7 @@ public class BatchedPipelineDestinationTests
 
         await pd.CompleteAsync(CancellationToken.None);
 
-        Assert.Single(dest.ReceivedBatches);
-        var batch = dest.ReceivedBatches[0];
+        var batch = Assert.Single(dest.ReceivedBatches);
         Assert.Equal(new[] { 1, 2 }, batch);
     }
 
