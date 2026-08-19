@@ -8,12 +8,34 @@ public abstract class PipelineGroup : IPipelineGroup
     //All pipeline types in this group
     private Dictionary<Type, PipelineBuilder> _pipelineBuilders = [];
 
+    private Type[]? _cachedTypes;
+    private Type[]? _cachedLoggerTypes;
+    private bool _isInitialized;
+
+    private void EnsureInitialized()
+    {
+        if (_isInitialized)
+            return;
+
+        _cachedTypes = [.. _pipelineBuilders.Keys];
+        _cachedLoggerTypes = new Type[_cachedTypes.Length];
+
+        for (int i = 0; i < _cachedTypes.Length; i++)
+        {
+            _cachedLoggerTypes[i] = typeof(ILogger<>).MakeGenericType(_cachedTypes[i]);
+        }
+
+        _isInitialized = true;
+    }
+
     /// <summary>
     /// Adds a pipeline to the group.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when the pipeline has already been added.</exception>
     protected IPipelineBuilder AddPipeline<TPipeline>() where TPipeline : IPipeline
     {
+        _isInitialized = false;
+
         var builder = new PipelineBuilder(_pipelineBuilders.Keys);
 
         if (_pipelineBuilders.TryAdd(typeof(TPipeline), builder))
@@ -29,31 +51,40 @@ public abstract class PipelineGroup : IPipelineGroup
     /// </summary>
     public async Task RunAsync(PipelineGroupExecutionContext context)
     {
+        EnsureInitialized();
+
+        var count = _cachedTypes!.Length;
+        if (count == 0)
+            return;
+
         try
         {
-            //Create a new scope for this run of the pipeline group
+            //Create a new scope for each run of the pipeline group
             using var scope = context.ScopeFactory.CreateScope();
+            var provider = scope.ServiceProvider;
 
-            //Instantiate all pipelines in this group
-            var pipelines = _pipelineBuilders
-                .Select(x => (x.Key, Value: (IPipeline)scope.ServiceProvider.GetRequiredService(x.Key)))
-                .ToDictionary(x => x.Key, x => x.Value);
-
-            var tasks = new List<Func<Task>>();
-            foreach (var (type, builder) in _pipelineBuilders)
+            //Initialize all pipelines using cached types
+            var pipelines = new IPipeline[count];
+            for (int i = 0; i < count; i++)
             {
-                var logger = (ILogger)scope.ServiceProvider.GetRequiredService(typeof(ILogger<>).MakeGenericType(type));
-                var parentPipelines = pipelines.IntersectBy(builder.ParentPipelines, x => x.Key).Select(x => x.Value);
-                var pipelineContext = new PipelineExecutionContext(parentPipelines, logger, context.Token);
-
-                var pipeline = pipelines.TryGetValue(type, out var p)
-                    ? p : throw new InvalidOperationException($"Pipeline of type {type.Name} not found in pipeline group");
-
-                //Delay execution of the pipeline until all execution contexts have been created
-                tasks.Add(() => pipeline.RunAsync(pipelineContext));
+                pipelines[i] = (IPipeline)provider.GetRequiredService(_cachedTypes[i]);
             }
 
-            await Task.WhenAll(tasks.Select(x => x.Invoke()));
+            var tasks = new Task[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                var type = _cachedTypes[i];
+                var builder = _pipelineBuilders[type];
+                var logger = (ILogger)provider.GetRequiredService(_cachedLoggerTypes![i]);
+
+                var parentPipelines = ResolveParentPipelines(builder.ParentPipelines, pipelines);
+                var pipelineContext = new PipelineExecutionContext(parentPipelines, logger, context.Token);
+
+                tasks[i] = pipelines[i].RunAsync(pipelineContext);
+            }
+
+            await Task.WhenAll(tasks);
         }
         catch (AggregateException ae)
         {
@@ -65,6 +96,21 @@ public abstract class PipelineGroup : IPipelineGroup
         catch (Exception e)
         {
             context.Logger.LogError(e, "An error occurred while running pipelines");
+        }
+    }
+
+    private IEnumerable<IPipeline> ResolveParentPipelines(IEnumerable<Type> parentTypes, IPipeline[] pipelines)
+    {
+        foreach (var parentType in parentTypes)
+        {
+            for (int i = 0; i < _cachedTypes!.Length; i++)
+            {
+                if (_cachedTypes[i] == parentType)
+                {
+                    yield return pipelines[i];
+                    break;
+                }
+            }
         }
     }
 }
