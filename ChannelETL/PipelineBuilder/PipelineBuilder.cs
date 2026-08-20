@@ -1,4 +1,4 @@
-﻿namespace ChannelETL.Extensions.DependencyInjection;
+﻿namespace ChannelETL;
 
 internal sealed class PipelineBuilder(IEnumerable<Type> pipelinesInGroup) : IPipelineBuilder
 {

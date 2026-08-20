@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
 
-namespace ChannelETL.Extensions.DependencyInjection;
+namespace ChannelETL;
 
 public static class IServiceCollectionExtensions
 {

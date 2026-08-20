@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace ChannelETL.Extensions.DependencyInjection;
+namespace ChannelETL;
 
 public readonly struct PipelineGroupExecutionContext()
 {

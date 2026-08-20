@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ChannelETL.Extensions.DependencyInjection.Tests;
+namespace ChannelETL.Tests;
 
 public class PipelineGroupTests
 {

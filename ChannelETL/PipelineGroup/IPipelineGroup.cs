@@ -1,4 +1,4 @@
-﻿namespace ChannelETL.Extensions.DependencyInjection;
+﻿namespace ChannelETL;
 
 public interface IPipelineGroup
 {
