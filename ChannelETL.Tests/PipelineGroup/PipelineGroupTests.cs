@@ -64,6 +64,84 @@ public class PipelineGroupTests
         Assert.Contains(nameof(ParentPipelineC), firstThree);
     }
 
+    [Fact]
+    public async Task RunAsync_CalledTwiceOnSameGroup_RunsPipelinesBothTimes()
+    {
+        var group = new TestPipelineGroup();
+
+        var context = new PipelineGroupExecutionContext()
+        {
+            ScopeFactory = Services.GetRequiredService<IServiceScopeFactory>(),
+            Logger = NullLogger.Instance,
+            Token = CancellationToken.None
+        };
+
+        // second call exercises the already-initialized short-circuit in EnsureInitialized
+        await group.RunAsync(context);
+        await group.RunAsync(context);
+
+        var state = Services.GetRequiredService<SharedState>();
+        Assert.Equal(4, state.Events.Count);
+    }
+
+    [Fact]
+    public void AddPipeline_SameTypeTwice_Throws()
+    {
+        Assert.Throws<InvalidOperationException>(() => new DuplicatePipelineGroup());
+    }
+
+    [Fact]
+    public async Task RunAsync_NoPipelinesAdded_CompletesWithoutRunningAnything()
+    {
+        var group = new EmptyPipelineGroup();
+
+        var context = new PipelineGroupExecutionContext()
+        {
+            ScopeFactory = Services.GetRequiredService<IServiceScopeFactory>(),
+            Logger = NullLogger.Instance,
+            Token = CancellationToken.None
+        };
+
+        await group.RunAsync(context);
+
+        var state = Services.GetRequiredService<SharedState>();
+        Assert.Empty(state.Events);
+    }
+
+    [Fact]
+    public async Task RunAsync_PipelineThrowsAggregateException_LogsAndDoesNotPropagate()
+    {
+        var group = new AggregateThrowingPipelineGroup();
+
+        var context = new PipelineGroupExecutionContext()
+        {
+            ScopeFactory = Services.GetRequiredService<IServiceScopeFactory>(),
+            Logger = NullLogger.Instance,
+            Token = CancellationToken.None
+        };
+
+        var exception = await Record.ExceptionAsync(() => group.RunAsync(context));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task RunAsync_PipelineThrows_LogsAndDoesNotPropagate()
+    {
+        var group = new PlainThrowingPipelineGroup();
+
+        var context = new PipelineGroupExecutionContext()
+        {
+            ScopeFactory = Services.GetRequiredService<IServiceScopeFactory>(),
+            Logger = NullLogger.Instance,
+            Token = CancellationToken.None
+        };
+
+        var exception = await Record.ExceptionAsync(() => group.RunAsync(context));
+
+        Assert.Null(exception);
+    }
+
     private class SharedState
     {
         public List<string> Events { get; } = new();
@@ -101,6 +179,45 @@ public class PipelineGroupTests
                 .WaitFor<ParentPipelineB>()
                 .WaitFor<ParentPipelineC>();
         }
+    }
+
+    private class DuplicatePipelineGroup : PipelineGroup
+    {
+        public DuplicatePipelineGroup()
+        {
+            AddPipeline<ParentPipeline>();
+            AddPipeline<ParentPipeline>();
+        }
+    }
+
+    private class EmptyPipelineGroup : PipelineGroup;
+
+    private class AggregateThrowingPipelineGroup : PipelineGroup
+    {
+        public AggregateThrowingPipelineGroup() => AddPipeline<AggregateThrowingPipeline>();
+    }
+
+    private class PlainThrowingPipelineGroup : PipelineGroup
+    {
+        public PlainThrowingPipelineGroup() => AddPipeline<PlainThrowingPipeline>();
+    }
+
+    // IPipeline.RunAsync itself is expected to swallow its own failures (see Pipeline<,>.RunAsync);
+    // these two exist only to exercise PipelineGroup's defensive catch around Task.WhenAll(tasks).
+    private class AggregateThrowingPipeline : IPipeline
+    {
+        public Task RunAsync(PipelineExecutionContext context) =>
+            Task.FromException(new AggregateException("boom", new InvalidOperationException("inner")));
+
+        public Task<PipelineOutcome> CompletionTask => Task.FromResult(PipelineOutcome.Failure);
+    }
+
+    private class PlainThrowingPipeline : IPipeline
+    {
+        public Task RunAsync(PipelineExecutionContext context) =>
+            Task.FromException(new InvalidOperationException("boom"));
+
+        public Task<PipelineOutcome> CompletionTask => Task.FromResult(PipelineOutcome.Failure);
     }
 
     // Awaits any parent pipelines (there are none for the "parent" roles below), then

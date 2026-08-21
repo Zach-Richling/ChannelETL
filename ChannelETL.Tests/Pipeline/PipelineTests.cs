@@ -196,6 +196,60 @@ public class PipelineTests
     }
 
     [Fact]
+    public async Task CompleteThrows_ConsumeSucceeded_RethrowsCompleteException()
+    {
+        var source = Substitute.For<IPipelineSource<int>>();
+        source.ProduceAsync(Arg.Any<CancellationToken>()).Returns(AsyncEnumerable.Range(1, 3));
+
+        var transform = CreatePassthroughTransform<int>();
+
+        var destination = Substitute.For<IPipelineDestination<int>>();
+        destination.CompleteAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("complete boom")));
+
+        var pipeline = new TestPipeline<int, int>(source, transform, destination)
+        {
+            Name = nameof(CompleteThrows_ConsumeSucceeded_RethrowsCompleteException)
+        };
+
+        await pipeline.RunAsync(TestHelpers.CreateContext([]));
+        var outcome = await pipeline.CompletionTask;
+
+        Assert.Equal(PipelineOutcome.Failure, outcome);
+    }
+
+    [Fact]
+    public async Task ConsumeAndCompleteBothThrow_CombinedIntoAggregateException()
+    {
+        var source = Substitute.For<IPipelineSource<int>>();
+        source.ProduceAsync(Arg.Any<CancellationToken>()).Returns(AsyncEnumerable.Range(1, 3));
+
+        var transform = CreatePassthroughTransform<int>();
+
+        var destination = Substitute.For<IPipelineDestination<int>>();
+        destination.When(x => x.ConsumeAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()))
+            .Do(ci =>
+            {
+                if (ci.Arg<int>() == 2)
+                    throw new InvalidOperationException("consume boom");
+            });
+        destination.CompleteAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("complete boom")));
+
+        var pipeline = new TestPipeline<int, int>(source, transform, destination)
+        {
+            Name = nameof(ConsumeAndCompleteBothThrow_CombinedIntoAggregateException)
+        };
+
+        await pipeline.RunAsync(TestHelpers.CreateContext([]));
+        var outcome = await pipeline.CompletionTask;
+
+        // both the destination's ConsumeAsync and CompleteAsync failed; the pipeline
+        // still only reports Failure (the AggregateException is caught, not surfaced)
+        Assert.Equal(PipelineOutcome.Failure, outcome);
+    }
+
+    [Fact]
     public async Task ChildDoesNotStartProduceUntilParentsComplete()
     {
         var parentTcs = new TaskCompletionSource<PipelineOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
