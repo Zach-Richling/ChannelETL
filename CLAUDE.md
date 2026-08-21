@@ -9,9 +9,10 @@ dotnet build                                          # build the solution
 dotnet test                                            # run all tests
 dotnet test --filter "FullyQualifiedName~PipelineTests"  # run a single test class
 dotnet test --filter "FullyQualifiedName~CompletesAndPreservesOrder"  # run a single test
+dotnet test -- --coverage --coverage-settings ChannelETL.Tests/CodeCoverage.config --coverage-output-format cobertura --coverage-output coverage.cobertura.xml  # run with code coverage (report lands in TestResults/)
 ```
 
-Target framework is `net10.0`. Test project uses xunit.v3 with NSubstitute for mocking.
+Target framework is `net10.0`. Test project uses xunit.v3 (via `Microsoft.Testing.Platform`, not the legacy VSTest host — `dotnet test` requires the `test.runner` setting in `global.json`) with NSubstitute for mocking. Code coverage is collected with `Microsoft.Testing.Extensions.CodeCoverage`; `ChannelETL.Tests/CodeCoverage.config` explicitly excludes the test assembly itself from the report.
 
 ## Architecture
 
