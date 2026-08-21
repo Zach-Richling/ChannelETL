@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ChannelETL.Tests;
@@ -27,10 +27,8 @@ public class PipelineGroupTests
             Token = CancellationToken.None
         };
 
-        // Act
         await group.RunAsync(context);
 
-        // Assert
         var state = Services.GetRequiredService<SharedState>();
         Assert.Equal(2, state.Events.Count);
 
@@ -51,10 +49,8 @@ public class PipelineGroupTests
             Token = CancellationToken.None
         };
 
-        // Act
         await group.RunAsync(context);
 
-        // Assert
         var state = Services.GetRequiredService<SharedState>();
         // Three parents + one child
         Assert.Equal(4, state.Events.Count);
@@ -107,7 +103,10 @@ public class PipelineGroupTests
         }
     }
 
-    private class ParentPipeline(SharedState state) : IPipeline
+    // Awaits any parent pipelines (there are none for the "parent" roles below), then
+    // records its name into SharedState. One base covers every fake pipeline this file needs;
+    // each pipeline still needs its own concrete type since PipelineGroup keys dependencies by Type.
+    private abstract class RecordingPipeline(SharedState state, string name, int delayMs = 20) : IPipeline
     {
         private readonly TaskCompletionSource<PipelineOutcome> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -117,69 +116,12 @@ public class PipelineGroupTests
         {
             try
             {
-                // Simulate some work
-                await Task.Delay(20, context.Token);
-                state.Add("parent");
-                _tcs.TrySetResult(PipelineOutcome.Success);
-            }
-            catch (OperationCanceledException)
-            {
-                _tcs.TrySetResult(PipelineOutcome.Canceled);
-                throw;
-            }
-            catch (Exception)
-            {
-                _tcs.TrySetResult(PipelineOutcome.Failure);
-                throw;
-            }
-        }
-    }
-
-    private class ChildPipeline(SharedState state) : IPipeline
-    {
-        private readonly TaskCompletionSource<PipelineOutcome> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task<PipelineOutcome> CompletionTask => _tcs.Task;
-
-        public async Task RunAsync(PipelineExecutionContext context)
-        {
-            try
-            {
-                // Respect parent dependencies by awaiting their completion tasks
-                var parentTasks = context.ParentPipelines.Select(p => p.CompletionTask);
-                if (parentTasks.Any())
+                var parentTasks = context.ParentPipelines.Select(p => p.CompletionTask).ToArray();
+                if (parentTasks.Length > 0)
                 {
                     await Task.WhenAll(parentTasks);
                 }
 
-                // Now perform child work
-                await Task.Delay(5, context.Token);
-                state.Add("child");
-                _tcs.TrySetResult(PipelineOutcome.Success);
-            }
-            catch (OperationCanceledException)
-            {
-                _tcs.TrySetResult(PipelineOutcome.Canceled);
-                throw;
-            }
-            catch (Exception)
-            {
-                _tcs.TrySetResult(PipelineOutcome.Failure);
-                throw;
-            }
-        }
-    }
-
-    private abstract class BaseParent(SharedState state, string name, int delayMs = 20) : IPipeline
-    {
-        protected readonly TaskCompletionSource<PipelineOutcome> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task<PipelineOutcome> CompletionTask => _tcs.Task;
-
-        public async Task RunAsync(PipelineExecutionContext context)
-        {
-            try
-            {
                 await Task.Delay(delayMs, context.Token);
                 state.Add(name);
                 _tcs.TrySetResult(PipelineOutcome.Success);
@@ -197,42 +139,11 @@ public class PipelineGroupTests
         }
     }
 
-    private class ParentPipelineA(SharedState state) : BaseParent(state, nameof(ParentPipelineA));
-    private class ParentPipelineB(SharedState state) : BaseParent(state, nameof(ParentPipelineB));
-    private class ParentPipelineC(SharedState state) : BaseParent(state, nameof(ParentPipelineC));
+    private class ParentPipeline(SharedState state) : RecordingPipeline(state, "parent");
+    private class ChildPipeline(SharedState state) : RecordingPipeline(state, "child", delayMs: 5);
 
-    private class ChildManyParentsPipeline(SharedState state) : IPipeline
-    {
-        private readonly TaskCompletionSource<PipelineOutcome> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task<PipelineOutcome> CompletionTask => _tcs.Task;
-
-        public async Task RunAsync(PipelineExecutionContext context)
-        {
-            try
-            {
-                // Wait for all parents to complete
-                var parentTasks = context.ParentPipelines.Select(p => p.CompletionTask).ToArray();
-                if (parentTasks.Length > 0)
-                {
-                    await Task.WhenAll(parentTasks);
-                }
-
-                // Child work
-                await Task.Delay(5, context.Token);
-                state.Add("child-many");
-                _tcs.TrySetResult(PipelineOutcome.Success);
-            }
-            catch (OperationCanceledException)
-            {
-                _tcs.TrySetResult(PipelineOutcome.Canceled);
-                throw;
-            }
-            catch (Exception)
-            {
-                _tcs.TrySetResult(PipelineOutcome.Failure);
-                throw;
-            }
-        }
-    }
+    private class ParentPipelineA(SharedState state) : RecordingPipeline(state, nameof(ParentPipelineA));
+    private class ParentPipelineB(SharedState state) : RecordingPipeline(state, nameof(ParentPipelineB));
+    private class ParentPipelineC(SharedState state) : RecordingPipeline(state, nameof(ParentPipelineC));
+    private class ChildManyParentsPipeline(SharedState state) : RecordingPipeline(state, "child-many", delayMs: 5);
 }
