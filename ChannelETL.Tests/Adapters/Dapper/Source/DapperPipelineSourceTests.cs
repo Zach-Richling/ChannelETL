@@ -24,18 +24,17 @@ public class DapperPipelineSourceTests
     }
 
     [Fact]
-    public void Sql_TableDirectCommandType_ReturnsTableName()
+    public void Sql_TableDirectCommandType_ThrowsNotSupportedException()
     {
-        var source = CreateSource(CommandType.TableDirect, tableName: "Orders");
+        var source = CreateSource(CommandType.TableDirect);
 
-        Assert.Equal("Orders", source.ResolvedSql);
+        Assert.Throws<NotSupportedException>(() => _ = source.ResolvedSql);
     }
 
     [Theory]
     [InlineData(CommandType.Text, "Text")]
     [InlineData(CommandType.StoredProcedure, "StoredProcedureName")]
-    [InlineData(CommandType.TableDirect, "TableName")]
-    public void Sql_MissingConfigurationForCommandType_ThrowsArgumentException(CommandType commandType, string expectedParamName)
+    public void Sql_MissingConfigurationForCommandType_ThrowsArgumentException(CommandType commandType, string? expectedParamName)
     {
         var source = CreateSource(commandType);
 
@@ -80,9 +79,8 @@ public class DapperPipelineSourceTests
     private static TestDapperSource<int> CreateSource(
         CommandType commandType,
         string? text = null,
-        string? tableName = null,
         string? storedProcedureName = null)
-        => new(Substitute.For<DbConnection>(), commandType, text, tableName, storedProcedureName);
+        => new(Substitute.For<DbConnection>(), commandType, text, storedProcedureName);
 
     private static async Task DrainAsync<T>(IAsyncEnumerable<T> source)
     {
@@ -97,14 +95,12 @@ public class DapperPipelineSourceTests
             DbConnection connection,
             CommandType commandType = CommandType.Text,
             string? text = null,
-            string? tableName = null,
             string? storedProcedureName = null,
             object? parameters = null)
             : base(connection)
         {
             CommandType = commandType;
             Text = text;
-            TableName = tableName;
             StoredProcedureName = storedProcedureName;
             Parameters = parameters;
         }

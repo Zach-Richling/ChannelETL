@@ -9,7 +9,6 @@ public abstract class DapperPipelineSource<TSource>(DbConnection connection) : I
 {
     protected CommandType CommandType { get; init; } = CommandType.Text;
     protected string? Text { get; init; }
-    protected string? TableName { get; init; }
     protected string? StoredProcedureName { get; init; }
     protected object? Parameters { get; init; }
 
@@ -17,15 +16,13 @@ public abstract class DapperPipelineSource<TSource>(DbConnection connection) : I
     {
         CommandType.Text => Text ?? throw new ArgumentException("Text must be provided for CommandType.Text.", nameof(Text)),
         CommandType.StoredProcedure => StoredProcedureName ?? throw new ArgumentException("StoredProcedureName must be provided for CommandType.StoredProcedure.", nameof(StoredProcedureName)),
-        CommandType.TableDirect => TableName ?? throw new ArgumentException("TableName must be provided for CommandType.TableDirect.", nameof(TableName)),
         _ => throw new NotSupportedException($"CommandType '{CommandType}' is not supported.")
     };
 
     public async IAsyncEnumerable<TSource> ProduceAsync([EnumeratorCancellation] CancellationToken token)
     {
-        await foreach (var item in connection.QueryUnbufferedAsync<TSource>(Sql, Parameters, commandType: CommandType))
+        await foreach (var item in connection.QueryUnbufferedAsync<TSource>(Sql, Parameters, commandType: CommandType).WithCancellation(token))
         {
-            token.ThrowIfCancellationRequested();
             yield return item;
         }
     }
