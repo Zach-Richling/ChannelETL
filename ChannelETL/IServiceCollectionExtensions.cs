@@ -5,6 +5,15 @@ namespace ChannelETL;
 
 public static class IServiceCollectionExtensions
 {
+    private static readonly HashSet<Type> PipelineInterfaceDefinitions =
+    [
+        typeof(IPipeline),
+        typeof(IPipelineGroup),
+        typeof(IPipelineSource<>),
+        typeof(IPipelineTransformation<,>),
+        typeof(IPipelineDestination<>)
+    ];
+
     /// <summary>
     /// Adds all classes that implement the pipeline interfaces to the service collection from the specified assembly.
     /// </summary>
@@ -13,17 +22,8 @@ public static class IServiceCollectionExtensions
         var classes = assembly.GetTypes()
             .Where(t => t.IsClass && !t.IsAbstract);
 
-        var pipelineInterfaces = new List<Type>()
-        {
-            typeof(IPipeline),
-            typeof(IPipelineGroup),
-            typeof(IPipelineSource<>),
-            typeof(IPipelineTransformation<,>),
-            typeof(IPipelineDestination<>)
-        };
-
         //Look for all classes that implement pipeline interfaces
-        foreach (var classType in classes.Where(t => pipelineInterfaces.Any(i => t.IsAssignableTo(i))))
+        foreach (var classType in classes.Where(ImplementsAnyPipelineInterface))
         {
             //Add the concrete class and all of its interfaces
             services.AddScoped(classType);
@@ -35,4 +35,7 @@ public static class IServiceCollectionExtensions
 
         return services;
     }
+
+    private static bool ImplementsAnyPipelineInterface(Type classType) =>
+        classType.GetInterfaces().Any(i => PipelineInterfaceDefinitions.Contains(i.IsGenericType ? i.GetGenericTypeDefinition() : i));
 }
