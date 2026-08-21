@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ChannelETL\ChannelETL.csproj" />
+    <ProjectReference Include="..\ChannelETL.Adapters.Dapper\ChannelETL.Adapters.Dapper.csproj" />
   </ItemGroup>
 
   <ItemGroup>
