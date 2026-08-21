@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="ChannelETL.Adapters.Dapper/ChannelETL.Adapters.Dapper.csproj" Id="ff018ef4-561b-4aa6-a57d-41311019919d" />
+  <Project Path="ChannelETL.IntegrationTests/ChannelETL.IntegrationTests.csproj" />
   <Project Path="ChannelETL.Tests/ChannelETL.Tests.csproj" Id="c0d7652e-6de5-4258-b72c-45717781fe2e" />
   <Project Path="ChannelETL/ChannelETL.csproj" />
 </Solution>
