@@ -13,7 +13,7 @@ public abstract class DapperPipelineSource<TSource>(DbConnection connection) : I
     protected string? StoredProcedureName { get; init; }
     protected object? Parameters { get; init; }
 
-    private string Sql => CommandType switch
+    protected string Sql => CommandType switch
     {
         CommandType.Text => Text ?? throw new ArgumentException("Text must be provided for CommandType.Text.", nameof(Text)),
         CommandType.StoredProcedure => StoredProcedureName ?? throw new ArgumentException("StoredProcedureName must be provided for CommandType.StoredProcedure.", nameof(StoredProcedureName)),
